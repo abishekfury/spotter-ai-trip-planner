@@ -2,10 +2,16 @@ services:
   - type: web
     name: safehaul-weather-truck-routing
     env: python
-    buildCommand: "cd frontend && npm install && npm run build && cd ../backend && pip install -r requirements.txt && python manage.py collectstatic --noinput"
-    startCommand: "cd backend && gunicorn truck_routing.wsgi:application --bind 0.0.0.0:$PORT"
+    buildCommand: "cd frontend && npm ci && npm run build && cd ../backend && pip install -r requirements.txt && DJANGO_DEBUG=true python manage.py collectstatic --noinput"
+    startCommand: "cd backend && gunicorn truck_routing.wsgi:application --bind 0.0.0.0:$PORT --workers 3 --timeout 60"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.2
       - key: NODE_VERSION
         value: 22.0.0
+      - key: DJANGO_DEBUG
+        value: "false"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_ALLOWED_HOSTS
+        value: .onrender.com

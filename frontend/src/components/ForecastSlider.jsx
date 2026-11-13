@@ -5,7 +5,7 @@ export default function ForecastSlider({
   currentHour,
   setCurrentHour,
   maxHours = 48,
-  heatmapData,
+  departureMs,
   showHeatmap,
   setShowHeatmap,
   heatmapMetric,
@@ -32,18 +32,13 @@ export default function ForecastSlider({
     return () => clearInterval(interval);
   }, [isPlaying, maxHours, setCurrentHour]);
 
-  // Format the time label for the active hour
-  const timeLabels = heatmapData?.time_labels || [];
-  const activeTimeStr = timeLabels[currentHour] || null;
-  const formattedTime = activeTimeStr
-    ? new Date(activeTimeStr).toLocaleString([], {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-      })
-    : `T + ${currentHour} hrs`;
+  const formattedTime = new Date(departureMs + currentHour * 3600000).toLocaleString([], {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 
   return (
     <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 shadow-2xl backdrop-blur-md">
@@ -56,11 +51,11 @@ export default function ForecastSlider({
             <div className="text-xs font-bold text-white flex items-center gap-2">
               <span>Trip Corridor Forecast Slider</span>
               <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                0–48h Model
+                Departure shift 0–48h
               </span>
             </div>
             <div className="text-[11px] text-slate-300 font-medium flex items-center gap-1.5 mt-0.5">
-              <span className="text-orange-400 font-bold">Hour +{currentHour}</span>
+              <span className="text-orange-400 font-bold">Depart +{currentHour}h</span>
               <span className="text-slate-500">•</span>
               <span className="text-slate-300">{formattedTime}</span>
             </div>

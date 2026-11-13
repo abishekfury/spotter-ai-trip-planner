@@ -6,3 +6,6 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - PORT=8000
+      - DJANGO_DEBUG=${DJANGO_DEBUG:-true}
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-local-compose-key}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-*}

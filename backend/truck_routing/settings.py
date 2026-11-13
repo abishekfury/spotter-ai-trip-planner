@@ -10,22 +10,54 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
+def _load_dotenv(path):
+    # Minimal .env reader so local setup needs no extra dependency; real env vars win.
+    if not path.exists():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith('#') and '=' in line:
+            key, _, value = line.partition('=')
+            os.environ.setdefault(key.strip(), value.strip().strip('"\''))
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-d&fytfqr0x@2wi232)tgwgeol%b4^v65tid2nrooqn$^=3)2hh'
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+_load_dotenv(BASE_DIR / '.env')
 
-ALLOWED_HOSTS = ['*']
+
+def env_list(name, default=''):
+    return [v.strip() for v in os.environ.get(name, default).split(',') if v.strip()]
+
+
+DEBUG = os.environ.get('DJANGO_DEBUG', 'true').lower() == 'true'
+
+# A fixed insecure key is only tolerated in development.
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY') or (
+    'dev-only-insecure-key' if DEBUG else None
+)
+if not SECRET_KEY:
+    raise RuntimeError('DJANGO_SECRET_KEY must be set when DJANGO_DEBUG=false')
+
+ALLOWED_HOSTS = env_list('DJANGO_ALLOWED_HOSTS', '*' if DEBUG else 'localhost,127.0.0.1')
+
+# Upstream services
+OSRM_BASE_URL = os.environ.get('OSRM_BASE_URL', 'https://router.project-osrm.org').rstrip('/')
+UPSTREAM_TIMEOUT_SECONDS = float(os.environ.get('UPSTREAM_TIMEOUT_SECONDS', '12'))
+
+# Local-memory cache keeps weather/geocode hits instant; set CACHE_URL-backed
+# backends (e.g. Redis) here for multi-process deployments.
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'truck-routing',
+    }
+}
 
 
 # Application definition
@@ -45,6 +77,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'django.middleware.gzip.GZipMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -54,8 +87,9 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = env_list('CORS_ALLOWED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173')
+CORS_ALLOW_ALL_ORIGINS = DEBUG and not os.environ.get('CORS_ALLOWED_ORIGINS')
+CSRF_TRUSTED_ORIGINS = env_list('CSRF_TRUSTED_ORIGINS')
 
 ROOT_URLCONF = 'truck_routing.urls'
 
@@ -144,3 +178,9 @@ WHITENOISE_ROOT = FRONTEND_DIR if FRONTEND_DIR.exists() else None
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True

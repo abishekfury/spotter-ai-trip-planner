@@ -50,3 +50,9 @@ bin/
 .DS_Store
 *.swp
 *.swo
+
+# Local env, build output and local data
+.env
+backend/.env
+backend/staticfiles/
+backend/db.sqlite3

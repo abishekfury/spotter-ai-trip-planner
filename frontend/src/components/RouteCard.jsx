@@ -1,8 +1,8 @@
 import React from 'react';
 import { Award, Clock, Compass, ShieldAlert, CheckCircle2, AlertTriangle, ArrowRight } from 'lucide-react';
-import { RISK_CONFIG } from '../utils/constants';
+import { formatDuration } from '../utils/format';
 
-export default function RouteCard({
+function RouteCard({
   route,
   isSelected,
   onSelect,
@@ -29,7 +29,7 @@ export default function RouteCard({
   const pSevere = ((m.severe_miles || 0) / totalMiles) * 100;
   const pHigh = ((m.high_miles || 0) / totalMiles) * 100;
   const pModerate = ((m.moderate_miles || 0) / totalMiles) * 100;
-  const pLow = Math.max(0, 100 - (pNoTravel + pSevere + pHigh + pModerate));
+  const pLow = ((m.low_miles || 0) / totalMiles) * 100;
 
   return (
     <div
@@ -45,15 +45,15 @@ export default function RouteCard({
         <div className="flex items-center gap-2">
           {isBest ? (
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-sm shadow-emerald-500/20">
-              <Award className="w-3.5 h-3.5" /> #1 RECOMMENDED
+              <Award className="w-3.5 h-3.5" /> RECOMMENDED
             </span>
-          ) : route.recommendation_rank === 2 ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30">
-              #2 RUNNER UP
+          ) : route.unsafe_no_travel ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-rose-950 text-rose-300 border border-rose-700">
+              <ShieldAlert className="w-3.5 h-3.5" /> UNSAFE · NO TRAVEL
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700">
-              #3 ELEVATED RISK
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+              #{route.recommendation_rank} ALTERNATE
             </span>
           )}
         </div>
@@ -76,7 +76,7 @@ export default function RouteCard({
           <div className="text-[10px] text-slate-400 uppercase tracking-wider">Drive Time</div>
           <div className="text-xs font-bold text-white mt-0.5 flex items-center justify-center gap-1">
             <Clock className="w-3 h-3 text-blue-400" />
-            {route.duration_hours}h
+            {formatDuration(route.duration_hours)}
           </div>
         </div>
         <div>
@@ -175,6 +175,22 @@ export default function RouteCard({
         </div>
       </div>
 
+      {route.unsafe_no_travel && (
+        <div className="mb-2 flex gap-1.5 text-[11px] text-rose-200 bg-rose-950/70 border border-rose-800 p-2 rounded-lg">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-rose-400" />
+          <span>{route.warning_reason}</span>
+        </div>
+      )}
+      {route.checkpoints?.some((c) => c.risk_assessment?.load_penalty_applied) && (
+        <div className="mb-2 text-[11px] text-amber-200 bg-amber-950/50 border border-amber-800/60 p-2 rounded-lg">
+          Load rule active on {route.checkpoints.filter((c) => c.risk_assessment?.load_penalty_applied).length} checkpoint(s):{' '}
+          {route.checkpoints.find((c) => c.risk_assessment?.load_penalty_applied).risk_assessment.load_rule}
+        </div>
+      )}
+      {route.synthetic && (
+        <div className="mb-2 text-[10px] text-slate-400">Estimated path (routing provider returned no alternative).</div>
+      )}
+
       {/* Recommendation Narrative */}
       <div className="text-[11px] text-slate-300 bg-slate-950/40 p-2 rounded-lg border border-slate-800/60 leading-relaxed">
         {route.recommendation_reason}
@@ -182,3 +198,5 @@ export default function RouteCard({
     </div>
   );
 }
+
+export default React.memo(RouteCard);

@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { QUICK_PRESETS } from '../utils/constants';
 
+import { toLocalInput } from '../utils/format';
+
 export default function Sidebar({
   origin,
   setOrigin,
@@ -115,15 +117,15 @@ export default function Sidebar({
   const setDepartureShortcut = (type) => {
     const now = new Date();
     if (type === 'now') {
-      setDepartureTime(now.toISOString().slice(0, 16));
+      setDepartureTime(toLocalInput(now));
     } else if (type === '+2h') {
       const d = new Date(now.getTime() + 2 * 3600 * 1000);
-      setDepartureTime(d.toISOString().slice(0, 16));
+      setDepartureTime(toLocalInput(d));
     } else if (type === 'tomorrow') {
       const d = new Date(now);
       d.setDate(d.getDate() + 1);
       d.setHours(6, 0, 0, 0);
-      setDepartureTime(d.toISOString().slice(0, 16));
+      setDepartureTime(toLocalInput(d));
     }
   };
 

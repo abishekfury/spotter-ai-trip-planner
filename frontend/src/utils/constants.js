@@ -33,7 +33,7 @@ export const RISK_CONFIG = {
   },
   'No Travel': {
     label: 'No Travel',
-    color: '#991B1B', // red-800
+    color: '#9F1239', // dark crimson (rose-800)
     bg: 'bg-red-950/70',
     border: 'border-red-600/70',
     text: 'text-red-300 font-semibold',
@@ -43,9 +43,9 @@ export const RISK_CONFIG = {
 
 export const QUICK_PRESETS = [
   {
-    name: 'Midwest to Rockies (I-80 / I-76)',
-    origin: { name: 'Chicago, IL', lat: 41.8781, lng: -87.6298 },
-    destination: { name: 'Denver, CO', lat: 39.7392, lng: -104.9903 },
+    name: 'Denver to Omaha (I-76 / I-80)',
+    origin: { name: 'Denver, CO', lat: 39.7392, lng: -104.9903 },
+    destination: { name: 'Omaha, NE', lat: 41.2565, lng: -95.9345 },
     weight: 42000,
     desc: 'High plains wind & mountain snow test corridor',
   },
@@ -71,3 +71,10 @@ export const QUICK_PRESETS = [
     desc: 'Rapid lake-effect weather corridor',
   },
 ];
+
+export const DEFAULT_TRIP = {
+  origin: { name: 'Denver, CO', lat: 39.7392, lng: -104.9903 },
+  destination: { name: 'Omaha, NE', lat: 41.2565, lng: -95.9345 },
+  loadWeight: 42000,
+  intervalMiles: 25,
+};

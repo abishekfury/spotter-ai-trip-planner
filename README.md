@@ -1,215 +1,166 @@
-# SafeHaul — Weather-Aware Truck Routing
+# SafeHaul: Weather-Aware Truck Routing
 
-> A full-stack **React + Django** intelligent route planning application designed for commercial truck drivers and dispatchers. SafeHaul analyzes three distinct multi-corridor routes, samples meteorological forecasts at the truck's exact estimated arrival time (ETA) at 10/25/50-mile checkpoints, evaluates compound weather hazard rules adjusted for truck gross load weights, recommends the optimal path balancing safety and transit time, and renders an interactive 0–48 hour forecast heatmap along the trip corridor.
+React + Django app that compares three routes for a truck, samples the forecast at the truck's exact arrival time at 10/25/50-mile checkpoints, applies load-weight-aware risk rules, and recommends the safest route. A 0–48 h slider re-evaluates every route and the weather heatmap instantly in the browser.
 
----
+The app opens pre-filled with a demo trip (Denver, CO to Omaha, NE, 42,000 lb, 25-mile interval).
 
-## 🌟 Key Features
+## Architecture
 
-1. **3 Multi-Corridor Route Generation**:
-   - Generates three distinct commercial corridors via OSRM (Open Source Routing Machine) routing API: Primary Interstate, Divergent Northern Corridor, and Southern Valley Bypass.
-   - Fail-safe atmospheric spline generator guarantees continuous operation even if external routing servers face network hiccups.
-2. **Dynamic Weather Sampling at Truck ETA**:
-   - Accurately samples weather every **10 / 25 / 50 miles** (configurable by the driver).
-   - Computes each checkpoint's Estimated Arrival Time (ETA) dynamically based on commercial truck speed profiles and distance along the polyline.
-   - Fetches hourly forecasts directly from **Open-Meteo API** (wind speed in mph, rainfall rate in in/hr, snowfall in in/hr, and temperature).
-3. **Weight-Aware Weather Risk Engine**:
-   - Evaluates base hazards across Wind, Rain, and Snow.
-   - Evaluates critical gross load escalation rules (e.g., wind 35–44 mph with load >40,000 lb escalates to Severe; wind 45–54 mph with load >30,000 lb triggers No Travel).
-4. **Safety-First Recommendation Algorithm**:
-   - Ranks routes based on four lexicographical preferences:
-     1. **Fewest Severe miles (and No Travel miles)**
-     2. **Fewest High miles**
-     3. **Lowest average risk**
-     4. **Shortest travel times**
-   - Automatically provides human-readable explanations detailing the exact hazards avoided.
-5. **Interactive Dark-Themed Map & 0–48h Forecast Slider**:
-   - Leaflet map rendering all three routes simultaneously with color-coded risk segments.
-   - Interactive checkpoint pins with popups showing ETA, wind, rain, snow, and triggered load factors.
-   - **0–48 Hour Trip Corridor Heatmap**: Scrub the slider or press Play to watch weather fronts and hazard fields evolve in real time over 48 hours.
-
----
-
-## 📐 Architecture & System Flow
-
-```mermaid
-flowchart TD
-    User["Commercial Driver / Dispatcher"] -->|"Origin, Destination, Departure Time, Load Weight, Sampling Interval"| UI["React 18 + Tailwind SPA (Vite)"]
-    
-    subgraph Frontend["Frontend Client (Vite / React)"]
-        UI --> Map["Leaflet Map Engine (Dark Matter)"]
-        UI --> Slider["0-48h Corridor Forecast Slider"]
-        UI --> Cards["3 Route Comparison Cards"]
-        UI --> Timeline["Checkpoint Inspection Drawer"]
-    end
-    
-    Frontend -->|"POST /api/routes/"| DjangoAPI["Django REST API Backend"]
-    
-    subgraph Backend["Django Backend Services"]
-        DjangoAPI --> RouteSvc["Route Service (OSRM / Corridors)"]
-        RouteSvc --> Geo["Polyline Sampling (10/25/50 mi) & ETA Calculator"]
-        Geo --> WeatherSvc["Weather Service (Open-Meteo API)"]
-        WeatherSvc --> RiskEngine["Risk & Load Weight Engine"]
-        RiskEngine --> RecEngine["Route Recommendation Engine"]
-        WeatherSvc --> HeatmapGen["0-48h Corridor Heatmap Generator"]
-    end
-    
-    Backend -->|"Ranked Routes, Checkpoints, ETAs, Metrics & 48h Heatmap Frames"| Frontend
+```
+frontend/ (React 18, Vite, Tailwind, Leaflet)        backend/ (Django 5, DRF)
+  App.jsx          state + data fetching               routing_core/
+  utils/engine.js  client mirror of risk + ranking       views.py          thin HTTP layer
+  MapComponent     imperative Leaflet layers             serializers.py    request validation
+  ForecastSlider   0-48h control                         services/
+                                                           routing.py        OSRM, 3 routes
+        POST /api/routes/  (once per trip)                 geometry.py       Haversine, checkpoints
+ ─────────────────────────────────────────►                weather.py        Open-Meteo, cache
+ ◄─────────────────────────────────────────                risk_engine.py    thresholds + load rules
+   routes + checkpoints + hourly forecasts                 recommendation.py segments, metrics, ranking
+                                                           planner.py        orchestration
+                                                           geocoding.py      place search
 ```
 
----
+Design decisions:
 
-## 🚦 Risk Rules & Load Weight Thresholds
+- **One network call per trip.** The response carries a 48 h+ hourly forecast per checkpoint. Slider movement never touches the network; `buildScenario()` recomputes risk, segments, metrics, ranking and heatmap points locally (about 6 ms for 3 routes and ~75 checkpoints).
+- **Shifted-departure model.** Slider hour *N* means "depart *N* hours later than requested". Every checkpoint ETA shifts by *N*, and the forecast slot used is `eta_offset_hours + N`. This answers "when should I leave?" rather than just showing a weather movie.
+- **No fabricated data.** If Open-Meteo is unreachable the API returns `503` instead of invented weather. A route that OSRM could not provide is generated geometrically and flagged `synthetic: true` (shown in the UI).
+- **Rules live in two places by necessity** (Python for the API, JS for the slider). Both are covered by the same boundary vectors in their test suites.
 
-### 1. Meteorological Condition Thresholds
-| Condition | Low | Moderate | High | Severe | No Travel |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Wind** | &lt;25 mph | 25–34 mph | 35–44 mph | 45–54 mph | **≥55 mph** |
-| **Rain** | &lt;0.10 in/hr | 0.10–0.25 in/hr | 0.25–0.50 in/hr | 0.50–1.00 in/hr | **&gt;1.00 in/hr** |
-| **Snow** | &lt;0.5 in/hr | 0.5–1.0 in/hr | 1.0–2.0 in/hr | 2.0–3.0 in/hr | **&gt;3.0 in/hr** |
+## APIs used
 
-### 2. Truck Load Weight Escalation Rules
-* **≥55 mph Wind**: Triggers **No Travel** for *any* load weight (imminent blow-over risk).
-* **45–54 mph Wind + &gt;30,000 lb Load**: Escalates from Severe to **No Travel** (heavy trailer lateral displacement).
-* **35–44 mph Wind + &gt;40,000 lb Load**: Escalates from High to **Severe** (crosswind control hazard on bridges/open plains).
+| Purpose | Provider | Notes |
+|---|---|---|
+| Routing | OSRM (`router.project-osrm.org`, override with `OSRM_BASE_URL`) | 3 queries run concurrently: direct + alternatives, plus north and south waypoint detours. The public demo has no SLA; self-host for production. |
+| Weather | Open-Meteo hourly forecast | No key. Units requested explicitly: wind `mph`, precipitation `inch` (rain + showers in in/hr, snowfall in in/hr), `UTC` times. |
+| Geocoding | Open-Meteo geocoding | 24 h cache, offline fallback list of freight hubs. |
+| Basemap | OpenStreetMap tiles, darkened with a CSS filter | Respect the OSM tile usage policy for production traffic. |
 
-### 3. Route Recommendation Preference Priority
-When comparing route options, the system lexicographically optimizes in order:
-1. **Fewest Severe miles (and No Travel miles)**
-2. **Fewest High miles**
-3. **Lowest average risk score (0 to 4.0 scale)**
-4. **Shortest travel times**
+Weather requests are de-duplicated and batched (40 locations per request), run concurrently in a thread pool, retried once, and cached for 30 minutes by rounded `(lat, lon, UTC date)` (0.01°, about 0.7 mi). Repeating a trip or nudging the departure time is served from cache. The default cache is process-local; use a shared Django cache backend (Redis) when running multiple workers.
 
----
+## Calculation details
 
-## 🚀 Quickstart & Setup
+### Checkpoints and ETAs
+- Cumulative Haversine distance is computed along the decoded route polyline.
+- Checkpoints are placed at exact multiples of the chosen interval (10/25/50 mi), with the exact origin (mile 0) and destination always included. Coordinates are linearly interpolated inside the polyline segment containing the mile marker.
+- `route distance` is the Haversine path length. `duration` is OSRM's duration × 1.12 (truck factor). ETA = `departure + duration × (mile / route distance)`, i.e. a uniform average speed over the same path used for distance.
+- Each checkpoint's weather is the hourly slot nearest its ETA.
 
-### Prerequisites
-- **Python 3.11+**
-- **Node.js 18+** & **npm**
-- (Optional) **Docker**
+### Risk thresholds (half-open bands, lower bound inclusive)
 
----
+| Tier | Wind (mph) | Rain (in/hr) | Snow (in/hr) |
+|---|---|---|---|
+| Low | < 25 | < 0.10 | < 0.5 |
+| Moderate | 25 to < 35 | 0.10 to < 0.25 | 0.5 to < 1.0 |
+| High | 35 to < 45 | 0.25 to < 0.50 | 1.0 to < 2.0 |
+| Severe | 45 to < 55 | 0.50 to < 1.00 | 2.0 to < 3.0 |
+| No Travel | ≥ 55 | ≥ 1.00 | ≥ 3.0 |
 
-### Option 1: One-Command Startup (Unified Server)
-The easiest way to run the entire unified stack on port `8000`:
+Base risk is the maximum of the three. Load rules then only ever escalate it:
+
+- Wind ≥ 55 mph: **No Travel**, any load.
+- Wind 45 to < 55 mph and load > 30,000 lb: **No Travel**.
+- Wind 35 to < 45 mph and load > 40,000 lb: **Severe**.
+
+Each checkpoint reports `base_risk`, `overall_risk`, `load_penalty_applied` and a `load_rule` explanation.
+
+### Miles per risk tier
+The stretch between two consecutive checkpoints takes the higher risk of its two endpoints (conservative). Segment lengths are exact mile differences, so `low + moderate + high + severe + no_travel` always equals the route distance.
+
+### Recommendation
+1. Routes with any No Travel miles get `unsafe_no_travel = true` and a `warning_reason`, e.g. *"Contains 25 miles of No Travel conditions: 48 mph wind with >30,000 lb load (42,000 lb): No Travel"*. They always rank behind safe routes and are never "Recommended".
+2. Safe routes are ranked by: fewest Severe miles, then fewest High miles, then lowest distance-weighted average risk score (0 to 4), then shortest travel time.
+3. `recommendation_reason` names the first criterion that separated the winner from the runner-up. If every route is unsafe, `best_route_id` is `null` and the UI says so.
+
+## Setup
+
+Prerequisites: Python 3.11+, Node 20+.
+
+### Development (hot reload)
 ```bash
-# Clone the repository
-git clone <repo-url>
-cd assessment
-
-# Run the startup script
-./start.sh
-```
-Open [http://localhost:8000](http://localhost:8000) in your browser.
-
----
-
-### Option 2: Development Mode (Hot Reload)
-
-#### 1. Backend Setup
-```bash
+# Backend
 cd backend
-python3 -m venv .venv
-source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python manage.py migrate
-python manage.py runserver 127.0.0.1:8000
-```
+cp .env.example .env            # optional; defaults work for local dev
+python manage.py runserver      # http://127.0.0.1:8000
 
-#### 2. Frontend Setup
-In a separate terminal:
-```bash
+# Frontend (second terminal); Vite proxies /api to port 8000
 cd frontend
 npm install
-npm run dev
+npm run dev                     # http://localhost:5173
 ```
-Open [http://localhost:5173](http://localhost:5173). The Vite dev server proxies `/api` requests directly to `http://127.0.0.1:8000`.
 
----
-
-### Option 3: Docker Deployment
-Run using Docker Compose:
+### Single-server build
 ```bash
-docker compose up --build
+cd frontend && npm ci && npm run build && cd ..
+cd backend && python manage.py collectstatic --noinput
+gunicorn truck_routing.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 60
 ```
-Access the application at [http://localhost:8000](http://localhost:8000).
+Django (via WhiteNoise) serves the built SPA and the API from one origin. `./start.sh` does the same with `runserver` for a quick local run.
 
----
-
-## 🧪 Automated Test Suite
-
-Run the full Django test suite verifying boundary conditions, load escalation rules, recommendation sorting, and API endpoints:
+### Docker
 ```bash
-cd backend
-python manage.py test
+docker compose up --build       # http://localhost:8000
 ```
 
-Test coverage includes:
-- Wind, rain, and snow threshold classification
-- Weight rule escalations (≥55 mph, 45–54 mph + >30k lb, 35–44 mph + >40k lb)
-- Lexicographical route recommendation hierarchy
-- Geocoding and route calculation endpoints
+### Deploying
+`render.yaml` and `Procfile` are provided. In production set `DJANGO_DEBUG=false`; the app refuses to start without `DJANGO_SECRET_KEY`.
 
----
+| Variable | Purpose |
+|---|---|
+| `DJANGO_DEBUG` | `true` (default) for local dev, `false` in production. |
+| `DJANGO_SECRET_KEY` | Required when debug is off. |
+| `DJANGO_ALLOWED_HOSTS` | Comma-separated hosts. |
+| `CORS_ALLOWED_ORIGINS` | Origins of a separately hosted frontend. Not needed when Django serves the SPA. |
+| `CSRF_TRUSTED_ORIGINS` | Same, for CSRF-protected endpoints. |
+| `OSRM_BASE_URL`, `UPSTREAM_TIMEOUT_SECONDS` | Routing provider and upstream timeout. |
+| `VITE_API_BASE_URL` (frontend) | Backend origin if the frontend is hosted separately. |
 
-## 🗺️ API Documentation
+See [backend/.env.example](backend/.env.example) and [frontend/.env.example](frontend/.env.example).
+
+## Tests
+```bash
+cd backend && python manage.py test routing_core   # 28 tests
+cd frontend && npm test                            # 5 tests (Node test runner)
+```
+Backend tests cover threshold boundaries (e.g. wind 24.99/25/34.99/35, rain 0.249/0.25/1.00, snow 0.99/1.0/3.0), load rules at ≤30k / 35k / 45k lb, Haversine and checkpoint interpolation (including a polyline with uneven vertex spacing), each of the four ranking tie-breakers, the weather cache, ETA-hour matching, validation, and the 503 path. Upstream calls are mocked.
+
+## API
 
 ### `POST /api/routes/`
-Computes 3 route alternatives with weather sampling, risk analysis, and corridor heatmap.
-
-**Request Body:**
 ```json
 {
-  "origin": { "name": "Chicago, IL", "lat": 41.8781, "lng": -87.6298 },
-  "destination": { "name": "Denver, CO", "lat": 39.7392, "lng": -104.9903 },
-  "departure_time": "2026-11-13T16:00:00",
+  "origin": { "name": "Denver, CO", "lat": 39.7392, "lng": -104.9903 },
+  "destination": { "name": "Omaha, NE", "lat": 41.2565, "lng": -95.9345 },
+  "departure_time": "2026-11-13T17:00:00Z",
   "load_weight": 42000,
   "sample_interval_miles": 25
 }
 ```
+`sample_interval_miles` must be 10, 25 or 50. The departure hour must fall in today's UTC forecast window (about 4 days). Errors: `400` with `error` and `details`, `503` when weather is unavailable.
 
-**Response Summary:**
-- `best_route_id`: ID of the recommended route (#1).
-- `routes`: Array of 3 route objects with `distance_miles`, `duration_hours`, `metrics` (`no_travel_miles`, `severe_miles`, `high_miles`, `moderate_miles`, `low_miles`, `average_risk_score`), `recommendation_badge`, `recommendation_reason`, and `checkpoints`.
-- `corridor_heatmap`: Object containing `time_labels` and `frames` for hours `0` through `48`, where each frame lists `[lat, lng, risk_score, wind_mph, precip_in, intensity]`.
+Response: `best_route_id` (nullable), `all_routes_unsafe`, `request_params`, and `routes[]` ranked best-first, each with `distance_miles`, `duration_hours`, `geometry`, `synthetic`, `metrics` (`low_miles` … `no_travel_miles`, `average_risk_score`), `segments`, `unsafe_no_travel`, `warning_reason`, `recommendation_badge`, `recommendation_reason`, and `checkpoints[]` with `distance_from_start_miles`, `estimated_arrival_time`, `eta_offset_hours`, `weather`, `risk_assessment`, `geometry_index` and the hourly `forecast` arrays used by the slider.
+
+The payload is about 600 KB uncompressed (about 140 KB with gzip, which is enabled).
 
 ### `GET /api/geocode/?q=Denver`
-Searches places and freight hubs with coordinate resolution.
+Place search, up to 6 results.
 
----
+### `GET /api/health/`
 
-## 📹 5–10 Minute Loom Walkthrough Script
+## Known limitations
+- Wind uses 10 m sustained speed, not gusts. Heavy-load rules may be optimistic in gusty conditions.
+- Snowfall comes straight from Open-Meteo's `snowfall` (snow depth per hour, converted to inches).
+- OSRM is a car profile; the 1.12 factor is an approximation of truck speeds, and routes ignore truck restrictions (height, weight, hazmat).
+- A segment takes the worse of its two checkpoints, so very sparse intervals (50 mi) are more conservative than dense ones.
+- The slider assumes the forecast for the shifted departure uses the same trip duration.
 
-Use this structured script for recording the Loom walkthrough video:
-
-* **0:00 – 1:00 | Introduction & Problem Overview**:
-  - Introduce **SafeHaul**: An intelligent weather-aware dispatch tool solving commercial truck routing hazards (crosswinds, ice, snowstorms, and weight blow-over limits).
-  - Highlight the stack: **React 18** (Vite + Tailwind CSS + Leaflet) and **Django REST Framework** + **Open-Meteo** + **OSRM**.
-* **1:00 – 2:30 | Input Parameters & Weight Escalation Rules**:
-  - Show the input panel: Enter Origin (*Chicago, IL*) and Destination (*Denver, CO*).
-  - Demonstrate the **Departure Date/Time** picker and quick shortcuts (+2h, Tomorrow 6am).
-  - Explain the **Load Weight** selector: Enter **42,000 lbs**. Open the *Risk Classification & Load Rules* drawer to demonstrate how the weight dynamically highlights the active **>40,000 lb** escalation rule.
-  - Explain the **Sampling Interval** toggle (10 / 25 / 50 miles) and set it to 25 miles.
-* **2:30 – 4:30 | Route Options & Recommendation Logic**:
-  - Click **Calculate Safest Route**.
-  - Show the 3 generated route options: Primary Interstate, Northern Alternate, and Southern Valley Bypass.
-  - Walk through the **#1 RECOMMENDED** badge vs **#2 RUNNER UP** and **#3 ELEVATED RISK**.
-  - Explain the risk bar breakdown: exact miles in Low, Moderate, High, Severe, and No Travel.
-  - Show how the algorithm strictly enforced preference: lowest Severe miles, lowest High miles, lowest average risk score, and shortest travel time.
-* **4:30 – 6:30 | Map Interaction & Checkpoint ETAs**:
-  - Inspect the dark-mode Leaflet map: Point out the color-coded polyline segments reflecting real-time risk.
-  - Click on several checkpoint circles along the route:
-    - Point out the checkpoint ETA (e.g. *Mile 125, ETA Nov 13, 6:45 PM*).
-    - Note the meteorological values: temperature, wind speed (mph), rain rate, and snow rate.
-    - Point out the active load rule tag explaining why a 38 mph wind with a 42,000 lb trailer was escalated to *Severe*.
-  - Open the **Checkpoints Drawer** to show the tabular view with risk filtering (All, Hazard, Severe, No Travel).
-* **6:30 – 8:30 | 0–48 Hour Corridor Forecast Heatmap**:
-  - Focus on the **Trip Corridor Forecast Slider** at the bottom of the map.
-  - Press the **Play** button: Watch the animated weather system traverse the 48-hour corridor across the Midwest and Great Plains.
-  - Switch heatmap metrics between *Risk Level*, *Wind mph*, and *Precip / Snow*.
-  - Show how dispatchers can advance the slider to identify optimal departure windows.
-* **8:30 – 9:30 | Code Quality, Tests & Conclusion**:
-  - Show the clean backend architecture: `risk_engine.py`, `route_service.py`, `weather_service.py`, `recommendation.py`.
-  - Show passing tests (`python manage.py test`).
-  - Summarize hosting and deployment readiness via Docker and single-server build.
+## Walkthrough outline (5 to 8 min)
+1. **Problem and stack (1 min):** weather-aware dispatch; React/Leaflet, Django services, OSRM, Open-Meteo.
+2. **Demo state (1 min):** Denver to Omaha at 42,000 lb. Show the load-rules legend.
+3. **Route comparison (2 min):** the Recommended badge, the risk-mile bar, `recommendation_reason`, and an unsafe route with its No Travel warning and load-rule alert.
+4. **Map (1 min):** colored segments along the real road, dashed crimson No Travel, hover or click a checkpoint for mile, local ETA, wind, rain, snow, base risk and load penalty.
+5. **Slider and heatmap (1.5 min):** drag 0 to 48 h, no spinners, no network calls (show the Network tab). Cards, ranking and heatmap change instantly. Toggle heatmap metrics.
+6. **Code (1.5 min):** `services/` split, exact Haversine checkpoints, concurrent cached weather, `risk_engine.py` boundary tests, and the JS mirror in `utils/engine.js`.

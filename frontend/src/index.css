@@ -61,3 +61,8 @@
 .leaflet-control-zoom a:hover {
   background-color: #334155 !important;
 }
+
+/* Dark basemap from standard OSM tiles; only the tile pane is inverted. */
+.dark-tiles {
+  filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9) saturate(0.6);
+}

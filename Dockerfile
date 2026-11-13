@@ -15,6 +15,7 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8000
+ENV DJANGO_DEBUG=false
 
 # Install dependencies
 COPY backend/requirements.txt ./backend/
@@ -26,8 +27,8 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # Collect static files with WhiteNoise
 WORKDIR /app/backend
-RUN python manage.py collectstatic --noinput
+RUN DJANGO_DEBUG=true python manage.py collectstatic --noinput
 
 EXPOSE 8000
 
-CMD ["gunicorn", "truck_routing.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "120"]
+CMD ["gunicorn", "truck_routing.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "60"]
