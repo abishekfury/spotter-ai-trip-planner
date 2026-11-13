@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: safehaul-weather-truck-routing
+    env: python
+    buildCommand: "cd frontend && npm install && npm run build && cd ../backend && pip install -r requirements.txt && python manage.py collectstatic --noinput"
+    startCommand: "cd backend && gunicorn truck_routing.wsgi:application --bind 0.0.0.0:$PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.2
+      - key: NODE_VERSION
+        value: 22.0.0
