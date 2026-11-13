@@ -94,6 +94,7 @@ export default function MapComponent({
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 19,
       className: 'dark-tiles',
+      referrerPolicy: 'strict-origin-when-cross-origin',
     }).addTo(map);
     layersRef.current.heat = L.heatLayer([], { radius: 30, blur: 24, maxZoom: 9, max: 1.6, minOpacity: 0.03, gradient: HEAT_GRADIENT });
     mapRef.current = map;
