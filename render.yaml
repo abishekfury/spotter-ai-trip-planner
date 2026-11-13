@@ -1,7 +1,8 @@
 services:
   - type: web
     name: safehaul-weather-truck-routing
-    env: python
+    runtime: python
+    plan: free
     buildCommand: "cd frontend && npm ci && npm run build && cd ../backend && pip install -r requirements.txt && DJANGO_DEBUG=true python manage.py collectstatic --noinput"
     startCommand: "cd backend && gunicorn truck_routing.wsgi:application --bind 0.0.0.0:$PORT --workers 3 --timeout 60"
     envVars:
