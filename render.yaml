@@ -7,9 +7,9 @@ services:
     startCommand: "cd backend && gunicorn truck_routing.wsgi:application --bind 0.0.0.0:$PORT --workers 3 --timeout 60"
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.2
+        value: 3.11.9
       - key: NODE_VERSION
-        value: 22.0.0
+        value: 22.12.0
       - key: DJANGO_DEBUG
         value: "false"
       - key: DJANGO_SECRET_KEY
